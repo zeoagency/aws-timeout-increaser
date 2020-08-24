@@ -146,7 +146,7 @@ func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 		if err != nil {
 			return events.APIGatewayProxyResponse{
 				StatusCode: http.StatusInternalServerError,
-				Body:       `{"error": "` + t.RequestID + err.Error() + ` :There is an issue with Lambda(Talker)."}`,
+				Body:       `{"error": There is an issue with Lambda(Talker)."}`,
 			}, nil
 		}
 	}
