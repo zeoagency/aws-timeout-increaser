@@ -10,7 +10,7 @@ As you know, AWS API Gateway has a hard limit for timeout; 29 seconds. In today'
 
 It works simply as follows; when there is an incoming request, the Proxy gives a RequestID to this request and adds a row to DynamoDB as a PENDING status. Then invokes Talker as async.
 
-After that, it checks the status in DynamoDB every 3 seconds, 8 tries at most. If the status becomes CREATED during this process, the result returns to the user after deleting the related row from the database. If the status doesn't become CREATED in the process, which is exactly the situation we want to overcome, returns a 303 response with RequestID to get user one more time.
+After that, it checks the status in DynamoDB every 2 seconds, the duration is 22-24 seconds at max. If the status becomes CREATED during this process, the result returns to the user after deleting the related row from the database. If the status doesn't become CREATED in the process, which is exactly the situation we want to overcome, returns a 303 response with RequestID to get user one more time.
 
 When the client arrives with a RequestID, the DB is checked again, this process continues until the Status becomes CREATED.
 

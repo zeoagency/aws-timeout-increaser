@@ -35,17 +35,6 @@ type task struct {
 	Status    string
 }
 
-func init() {
-	_ = godotenv.Load()
-
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-
-	client = serviceLambda.New(sess)
-	db = dynamodb.New(sess)
-}
-
 // InitTaskOnDB inits a new row for the given task with pending status.
 func (t *task) InitTaskOnDB() error {
 	t.RequestID = uuid.New().String()
@@ -82,7 +71,7 @@ func (t *task) ReadFromDB() (int, error) {
 	if err != nil {
 		return http.StatusInternalServerError, errors.New("There is an issue with DynamoDB.")
 	}
-	if result == nil {
+	if result.Item == nil {
 		return http.StatusNotFound, errors.New("RequestID is wrong.")
 	}
 
@@ -115,9 +104,10 @@ func (t *task) Delete() error {
 
 // Proxy returns 303 until the response's status become CREATED.
 // When a new request arrived, it creates a new row with PENDING status on DynamoDB.
-// After that, it checks the DB every 3 seconds until the status become CREATED.
-// If it tried 8 times, it returns 303 to get a new request from the client.
+// It checks the DB every 2 seconds, the duration is ~22-24 seconds at max.
 func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+	startTime := time.Now()
+
 	var t = new(task)
 	t.RequestID = request.QueryStringParameters["requestID"]
 
@@ -151,11 +141,14 @@ func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 		}
 	}
 
-	// Try while status is not CREATED.
-	// It will try 8 times at most.
-	for i := 0; i < 8; i++ {
-		time.Sleep(3 * time.Second)
+	if time.Since(startTime) > 16*time.Second {
+		return events.APIGatewayProxyResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       `{"error": There is an issue with DynamobDB."}`,
+		}, nil
+	}
 
+	for ; time.Since(startTime) < 22*time.Second; time.Sleep(2 * time.Second) {
 		status, err := t.ReadFromDB()
 		if err != nil {
 			return events.APIGatewayProxyResponse{
@@ -167,15 +160,12 @@ func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 		if t.Status == statusCreated { // Return result if the status is CREATED.
 			var resp events.APIGatewayProxyResponse
 			_ = json.Unmarshal([]byte(t.Result), &resp)
-
 			_ = t.Delete()
+
 			return resp, nil
 		}
 	}
 
-	// The status didn't become CREATED.
-	// We don't have any time.
-	// Send a response with 303 to get the client one more time.
 	request.Headers["Location"] = "/" + stageName + request.Path + "?requestID=" + t.RequestID
 	return events.APIGatewayProxyResponse{
 		StatusCode: http.StatusSeeOther,
@@ -185,5 +175,12 @@ func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 }
 
 func main() {
+	_ = godotenv.Load()
+
+	sess := session.Must(session.NewSession())
+
+	client = serviceLambda.New(sess)
+	db = dynamodb.New(sess)
+
 	lambda.Start(Proxy)
 }
