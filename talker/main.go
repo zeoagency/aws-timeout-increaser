@@ -30,17 +30,6 @@ type task struct {
 	Status    string
 }
 
-func init() {
-	_ = godotenv.Load()
-
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
-
-	client = serviceLambda.New(sess)
-	db = dynamodb.New(sess)
-}
-
 // WriteToDB writes the given to the Database.
 func (t *task) WriteToDB() error {
 	request, err := dynamodbattribute.MarshalMap(t)
@@ -98,5 +87,12 @@ func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 }
 
 func main() {
+	_ = godotenv.Load()
+
+	sess := session.Must(session.NewSession())
+
+	client = serviceLambda.New(sess)
+	db = dynamodb.New(sess)
+
 	lambda.Start(Proxy)
 }

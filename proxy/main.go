@@ -102,11 +102,31 @@ func (t *task) Delete() error {
 	return nil
 }
 
+// auth checks the api-key param if the API_KEY is defined at env.
+func auth(apiKeyParam string) bool {
+	key := os.Getenv("API_KEY")
+	if key == "" || key == apiKeyParam {
+		return true
+	}
+	return false
+}
+
 // Proxy returns 303 until the response's status become CREATED.
 // When a new request arrived, it creates a new row with PENDING status on DynamoDB.
 // It checks the DB every 2 seconds, the duration is ~22-24 seconds at max.
 func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	startTime := time.Now()
+
+	if request.HTTPMethod == "GET" {
+		// Check the api-key if it as a GET request.
+		apiKeyParam := request.QueryStringParameters["api-key"]
+		if !auth(apiKeyParam) {
+			return events.APIGatewayProxyResponse{
+				StatusCode: http.StatusUnauthorized,
+				Body:       `{"error": "api-key is not valid."}`,
+			}, nil
+		}
+	}
 
 	var t = new(task)
 	t.RequestID = request.QueryStringParameters["requestID"]
@@ -166,7 +186,12 @@ func Proxy(request events.APIGatewayProxyRequest) (events.APIGatewayProxyRespons
 		}
 	}
 
-	request.Headers["Location"] = "/" + stageName + request.Path + "?requestID=" + t.RequestID
+	location := "/" + stageName + request.Path + "?requestID=" + t.RequestID
+	if key := os.Getenv("API_KEY"); key != "" {
+		location += "&api-key=" + key
+	}
+	request.Headers["Location"] = location
+
 	return events.APIGatewayProxyResponse{
 		StatusCode: http.StatusSeeOther,
 		Headers:    request.Headers,
